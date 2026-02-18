@@ -151,7 +151,13 @@
           {% for r in results %}
           <tr>
             <td>{{ loop.index }}</td>
-            <td>{{ r.provider|upper }}</td>
+            <td>
+              {% if r.provider == "getty" %}
+              <a href="{{ r.page_url }}" target="_blank" rel="noopener">{{ r.provider|upper }}</a>
+              {% else %}
+              {{ r.provider|upper }}
+              {% endif %}
+            </td>
             <td>{{ "%.3f"|format(r.score) }}</td>
             <td>{% if r.captured_at %}{{ r.captured_at.strftime('%Y-%m-%d') }}{% else %}unknown{% endif %}</td>
             <td>{{ r.edited_caption }}</td>
