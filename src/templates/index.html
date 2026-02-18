@@ -166,13 +166,7 @@
             </td>
             <td>
               {% if r.provider == "getty" %}
-              <form class="inline-form" action="/download/getty" method="post">
-                <input type="hidden" name="page_url" value="{{ r.page_url }}" />
-                <input type="hidden" name="image_url" value="{{ r.image_url }}" />
-                <input type="hidden" name="edited_caption" value="{{ r.edited_caption }}" />
-                <input type="hidden" name="title" value="{{ r.title }}" />
-                <button class="link-btn" type="submit">Download photo</button>
-              </form>
+              <a href="{{ r.page_url }}" target="_blank" rel="noopener">Open on Getty (login required)</a>
               {% else %}
               <a href="{{ r.page_url }}" target="_blank" rel="noopener">Open source</a>
               {% endif %}

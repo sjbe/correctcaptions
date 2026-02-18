@@ -219,6 +219,12 @@ def search():
 
 @app.post("/download/getty")
 def download_getty():
+    if os.getenv("ALLOW_PROXY_DOWNLOAD", "0") != "1":
+        return Response(
+            "Proxy download is disabled. Open the Getty page and download while logged into Getty.",
+            status=403,
+        )
+
     detail_url = (request.form.get("page_url") or "").strip()
     fallback_image_url = (request.form.get("image_url") or "").strip()
     edited_caption = (request.form.get("edited_caption") or "").strip()
