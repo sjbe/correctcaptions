@@ -5,8 +5,9 @@ import json
 import os
 import re
 import time
+import uuid
 
-from flask import Flask, Response, redirect, render_template, request
+from flask import Flask, Response, jsonify, redirect, render_template, request
 
 try:
     from photo_finder import PhotoResult, load_config, run
@@ -15,6 +16,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 app = Flask(__name__)
 PENDING_DOWNLOADS_FILE = os.getenv("PENDING_DOWNLOADS_FILE", "pending_downloads.json")
+SYNC_TOKEN = os.getenv("SYNC_TOKEN", "")
 
 
 def _search(form) -> tuple[str, int, list[PhotoResult], str, str]:
@@ -66,6 +68,7 @@ def _track_pending_download(page_url: str, title: str, caption: str) -> None:
     entries = _load_pending_downloads()
     entries.append(
         {
+            "id": str(uuid.uuid4()),
             "page_url": page_url,
             "title": title,
             "caption": caption,
@@ -76,6 +79,17 @@ def _track_pending_download(page_url: str, title: str, caption: str) -> None:
         }
     )
     _save_pending_downloads(entries)
+
+
+def _authorized(req) -> bool:
+    if not SYNC_TOKEN:
+        return False
+    token = (
+        req.headers.get("X-Sync-Token", "")
+        or req.args.get("token", "")
+        or req.form.get("token", "")
+    )
+    return token == SYNC_TOKEN
 
 
 @app.get("/")
@@ -112,6 +126,35 @@ def open_getty():
         return Response("Missing Getty URL.", status=400)
     _track_pending_download(page_url, title, caption)
     return redirect(page_url, code=302)
+
+
+@app.get("/api/pending")
+def api_pending():
+    if not _authorized(request):
+        return Response("Unauthorized", status=401)
+    entries = _load_pending_downloads()
+    recent = [e for e in entries if not e.get("matched")]
+    recent.sort(key=lambda e: int(e.get("created_at") or 0), reverse=True)
+    return jsonify({"pending": recent[:200]})
+
+
+@app.post("/api/pending/mark")
+def api_pending_mark():
+    if not _authorized(request):
+        return Response("Unauthorized", status=401)
+    item_id = (request.form.get("id") or "").strip()
+    matched_file = (request.form.get("matched_file") or "").strip()
+    if not item_id:
+        return Response("Missing id", status=400)
+    entries = _load_pending_downloads()
+    for entry in entries:
+        if entry.get("id") == item_id:
+            entry["matched"] = True
+            entry["matched_file"] = matched_file
+            entry["matched_at"] = int(time.time())
+            break
+    _save_pending_downloads(entries)
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":

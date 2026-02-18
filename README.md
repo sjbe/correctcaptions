@@ -34,6 +34,16 @@ python3 src/post_download_captioner.py --downloads ~/Downloads
 
 Keep it running while you work.
 
+If your web app runs on Render, use hosted sync mode:
+```bash
+python3 src/post_download_captioner.py \
+  --downloads ~/Downloads \
+  --api-base "https://YOUR-RENDER-URL.onrender.com" \
+  --api-token "YOUR_SYNC_TOKEN"
+```
+
+Set `SYNC_TOKEN` in Render environment variables to the same value.
+
 ## Deploy For Your Team (Render, easiest)
 1. Push this folder to a GitHub repo.
 2. In Render, create a new `Web Service` from that repo.

@@ -7,6 +7,8 @@ import re
 import time
 from pathlib import Path
 
+import requests
+
 try:
     from metadata_utils import inject_caption_metadata
 except Exception:  # pragma: no cover
@@ -42,6 +44,33 @@ def load_pending(path: Path) -> list[dict]:
 
 def save_pending(path: Path, entries: list[dict]) -> None:
     path.write_text(json.dumps(entries[-500:], ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_pending_remote(api_base: str, token: str) -> list[dict]:
+    url = f"{api_base.rstrip('/')}/api/pending"
+    try:
+        resp = requests.get(url, headers={"X-Sync-Token": token}, timeout=20)
+        resp.raise_for_status()
+        data = resp.json()
+        pending = data.get("pending", [])
+        return pending if isinstance(pending, list) else []
+    except Exception:
+        return []
+
+
+def mark_remote(api_base: str, token: str, item_id: str, matched_file: str) -> None:
+    if not item_id:
+        return
+    url = f"{api_base.rstrip('/')}/api/pending/mark"
+    try:
+        requests.post(
+            url,
+            headers={"X-Sync-Token": token},
+            data={"id": item_id, "matched_file": matched_file},
+            timeout=20,
+        )
+    except Exception:
+        pass
 
 
 def score_match(filename: str, entry: dict) -> float:
@@ -126,6 +155,8 @@ def main() -> None:
     parser.add_argument("--downloads", default=str(Path.home() / "Downloads"), help="Downloads directory")
     parser.add_argument("--pending", default="pending_downloads.json", help="Pending downloads JSON path")
     parser.add_argument("--state", default="captioner_state.json", help="Processed state JSON path")
+    parser.add_argument("--api-base", default="", help="Hosted app base URL (e.g. https://correctcaptions.onrender.com)")
+    parser.add_argument("--api-token", default="", help="Sync token matching web app SYNC_TOKEN")
     parser.add_argument("--poll", type=float, default=2.0, help="Polling interval seconds")
     args = parser.parse_args()
 
@@ -140,7 +171,10 @@ def main() -> None:
 
     print(f"Watching {downloads_dir} for new Getty downloads...")
     while True:
-        pending = load_pending(pending_path)
+        if args.api_base and args.api_token:
+            pending = load_pending_remote(args.api_base, args.api_token)
+        else:
+            pending = load_pending(pending_path)
         downloads = scan_downloads(downloads_dir)
         file_path, idx = find_best_match(downloads, pending, processed)
 
@@ -156,7 +190,10 @@ def main() -> None:
                 print(f"Caption injected: {file_path.name}")
             else:
                 print(f"Failed to inject caption for: {file_path.name}")
-            save_pending(pending_path, pending)
+            if args.api_base and args.api_token:
+                mark_remote(args.api_base, args.api_token, entry.get("id", ""), key)
+            else:
+                save_pending(pending_path, pending)
             state_path.write_text(json.dumps(sorted(processed), ensure_ascii=False, indent=2), encoding="utf-8")
 
         time.sleep(max(args.poll, 0.5))
