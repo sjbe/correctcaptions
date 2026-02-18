@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import os
 import tempfile
+from typing import Any
 
 try:
     import piexif
@@ -99,3 +100,72 @@ def inject_caption_metadata(content: bytes, caption: str, source_url: str) -> tu
             return out.getvalue(), "PNG"
 
     return content, fmt or "BIN"
+
+
+def _decode_meta(value: Any) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore").strip()
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def read_image_metadata(path: str) -> dict[str, str]:
+    meta = {
+        "caption": "",
+        "source": "",
+        "credit": "",
+        "title": "",
+        "format": "",
+    }
+    if Image is None:
+        return meta
+
+    try:
+        with Image.open(path) as im:
+            meta["format"] = (im.format or "").upper()
+            if meta["format"] == "PNG":
+                info = im.info or {}
+                meta["caption"] = _decode_meta(info.get("Description", ""))
+                meta["source"] = _decode_meta(info.get("Source", ""))
+            if meta["format"] in {"JPEG", "JPG"} and piexif is not None:
+                exif_bytes = im.info.get("exif", b"")
+                if exif_bytes:
+                    exif = piexif.load(exif_bytes)
+                    z0 = exif.get("0th", {})
+                    meta["caption"] = meta["caption"] or _decode_meta(
+                        z0.get(piexif.ImageIFD.ImageDescription, b"")
+                    )
+                    meta["credit"] = meta["credit"] or _decode_meta(
+                        z0.get(piexif.ImageIFD.Artist, b"")
+                    )
+                    meta["source"] = meta["source"] or _decode_meta(
+                        z0.get(piexif.ImageIFD.Copyright, b"")
+                    )
+    except Exception:
+        pass
+
+    if IPTCInfo is not None and path.lower().endswith((".jpg", ".jpeg")):
+        try:
+            info = IPTCInfo(path, force=True)
+            meta["caption"] = meta["caption"] or _decode_meta(info["caption/abstract"])
+            meta["credit"] = meta["credit"] or _decode_meta(info["credit"])
+            meta["source"] = meta["source"] or _decode_meta(info["source"])
+            meta["title"] = meta["title"] or _decode_meta(info["headline"] or info["object name"])
+        except Exception:
+            pass
+
+    return meta
+
+
+def is_probably_getty(path: str, metadata: dict[str, str]) -> bool:
+    haystack = " ".join(
+        [
+            os.path.basename(path),
+            metadata.get("caption", ""),
+            metadata.get("source", ""),
+            metadata.get("credit", ""),
+            metadata.get("title", ""),
+        ]
+    ).lower()
+    return "getty" in haystack or "gettyimages.com" in haystack

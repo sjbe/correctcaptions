@@ -1,3 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
+captioner_state.json
+caption_only_state.json
+pending_downloads.json
