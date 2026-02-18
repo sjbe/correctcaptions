@@ -166,7 +166,7 @@
             </td>
             <td>
               {% if r.provider == "getty" %}
-              <a href="{{ r.page_url }}" target="_blank" rel="noopener">Open on Getty (login required)</a>
+              <a href="/open/getty?page_url={{ r.page_url|urlencode }}&title={{ r.title|urlencode }}&caption={{ r.edited_caption|urlencode }}" target="_blank" rel="noopener">Open on Getty (login required)</a>
               {% else %}
               <a href="{{ r.page_url }}" target="_blank" rel="noopener">Open source</a>
               {% endif %}
