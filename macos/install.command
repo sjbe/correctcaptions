@@ -25,18 +25,33 @@ if [ -z "${OPENAI_API_KEY:-}" ]; then
   fi
 fi
 
-if [ -z "${OPENAI_API_KEY:-}" ]; then
-  printf "Enter OPENAI_API_KEY: "
-  read -r OPENAI_API_KEY
+if [ -z "${REWRITE_API_URL:-}" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
+  printf "Use shared rewrite API? (recommended) [Y/n]: "
+  read -r USE_SHARED
+  if [ -z "$USE_SHARED" ] || [ "${USE_SHARED}" = "Y" ] || [ "${USE_SHARED}" = "y" ]; then
+    printf "Enter REWRITE_API_URL (example: https://your-api.onrender.com): "
+    read -r REWRITE_API_URL
+    printf "Enter REWRITE_API_TOKEN: "
+    read -r REWRITE_API_TOKEN
+  else
+    printf "Enter OPENAI_API_KEY: "
+    read -r OPENAI_API_KEY
+  fi
 fi
 
-if [ -z "$OPENAI_API_KEY" ]; then
-  echo "OPENAI_API_KEY is required."
+if [ -z "${REWRITE_API_URL:-}" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
+  echo "Either REWRITE_API_URL or OPENAI_API_KEY is required."
+  exit 1
+fi
+if [ -n "${REWRITE_API_URL:-}" ] && [ -z "${REWRITE_API_TOKEN:-}" ]; then
+  echo "REWRITE_API_TOKEN is required when REWRITE_API_URL is set."
   exit 1
 fi
 
 cat > "$ENV_FILE" <<ENV
-OPENAI_API_KEY="$OPENAI_API_KEY"
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+REWRITE_API_URL="${REWRITE_API_URL:-}"
+REWRITE_API_TOKEN="${REWRITE_API_TOKEN:-}"
 DOWNLOADS_DIR="$HOME/Downloads"
 POLL_SECONDS="2.0"
 STATE_FILE="$HOME/.correctcaptions_state.json"

@@ -7,12 +7,14 @@ import os
 import time
 from pathlib import Path
 
+import requests
 import yaml
-from openai import OpenAI
 
 try:
+    from caption_rewriter import rewrite_caption_with_openai
     from metadata_utils import inject_caption_metadata, is_probably_getty, read_image_metadata
 except Exception:  # pragma: no cover
+    from src.caption_rewriter import rewrite_caption_with_openai
     from src.metadata_utils import inject_caption_metadata, is_probably_getty, read_image_metadata
 
 
@@ -21,39 +23,46 @@ def load_config(path: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def rewrite_caption(original_caption: str, metadata: dict[str, str], cfg: dict) -> tuple[str, str]:
-    key = os.getenv("OPENAI_API_KEY", "")
-    if not key:
-        return original_caption.strip(), "OPENAI_API_KEY missing"
+def rewrite_via_api(
+    original_caption: str, metadata: dict[str, str], api_url: str, api_token: str
+) -> tuple[str, str]:
+    try:
+        resp = requests.post(
+            f"{api_url.rstrip('/')}/rewrite",
+            json={"caption": original_caption, "metadata": metadata},
+            headers={"Authorization": f"Bearer {api_token}"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return (data.get("caption") or original_caption).strip(), data.get("reason", "")
+    except Exception as exc:
+        return original_caption.strip(), f"Rewrite API request failed: {exc}"
 
+
+def rewrite_caption(
+    original_caption: str, metadata: dict[str, str], cfg: dict, api_url: str, api_token: str
+) -> tuple[str, str]:
+    if api_url and api_token:
+        rewritten, reason = rewrite_via_api(original_caption, metadata, api_url, api_token)
+        if rewritten.strip() != original_caption.strip():
+            return rewritten, ""
+        if "Unauthorized" in reason:
+            return original_caption.strip(), reason
+
+    key = os.getenv("OPENAI_API_KEY", "")
     caption_cfg = cfg.get("caption", {})
     instructions = caption_cfg.get("instructions", "Rewrite to concise factual caption.")
     max_words = int(caption_cfg.get("max_words", 45))
     model = caption_cfg.get("openai_model", "gpt-4.1-mini")
-
-    user_prompt = (
-        "Rewrite this Getty photo caption using the provided rules.\n"
-        f"Original caption: {original_caption}\n"
-        f"Source metadata: {metadata}\n"
-        f"Hard limits: max {max_words} words, output only the caption."
+    return rewrite_caption_with_openai(
+        original_caption=original_caption,
+        metadata=metadata,
+        instructions=instructions,
+        model=model,
+        max_words=max_words,
+        api_key=key,
     )
-
-    client = OpenAI(api_key=key)
-    try:
-        resp = client.responses.create(
-            model=model,
-            input=[
-                {"role": "system", "content": instructions},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_output_tokens=200,
-        )
-        text = getattr(resp, "output_text", "") or ""
-        text = " ".join(text.split())
-        out = text or original_caption.strip()
-        return out, ""
-    except Exception as exc:
-        return original_caption.strip(), f"OpenAI request failed: {exc}"
 
 
 def scan_downloads(downloads_dir: Path, processed: set[str]) -> list[Path]:
@@ -84,6 +93,8 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--state", default="caption_only_state.json")
     parser.add_argument("--poll", type=float, default=2.0)
+    parser.add_argument("--rewrite-api-url", default=os.getenv("REWRITE_API_URL", ""))
+    parser.add_argument("--rewrite-api-token", default=os.getenv("REWRITE_API_TOKEN", ""))
     parser.add_argument("--all-images", action="store_true", help="Process all new images, not just probable Getty files")
     parser.add_argument("--verbose", action="store_true", help="Print skip/failure reasons")
     parser.add_argument("--once", action="store_true", help="Run one scan and exit")
@@ -118,7 +129,9 @@ def main() -> None:
                     print(f"Skipped no caption metadata: {file_path.name}")
                 continue
 
-            new_caption, reason = rewrite_caption(original_caption, metadata, cfg)
+            new_caption, reason = rewrite_caption(
+                original_caption, metadata, cfg, args.rewrite_api_url, args.rewrite_api_token
+            )
             new_caption = new_caption.strip()
             if not new_caption:
                 processed.add(key)

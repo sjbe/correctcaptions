@@ -1,7 +1,9 @@
-.venv/
-__pycache__/
+.venv
+.pytest_cache
+__pycache__
 *.pyc
+.git
 .DS_Store
-captioner_state.json
 caption_only_state.json
+captioner_state.json
 pending_downloads.json
